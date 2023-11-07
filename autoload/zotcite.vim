@@ -570,6 +570,72 @@ function zotcite#CheckBib()
     endif
 endfunction
 
+" Extract all notes and annotations at once
+function zotcite#GetAllAnnotations()
+    " let argmt = split(a:ko)
+    " let zotkey = zotcite#FindCitationKey(argmt[0])
+    let zotkey = zotcite#GetCitationKey()
+    if zotkey != ''
+        let offset = 0
+        " if len(argmt) == 2
+        "     let offset = str2nr(argmt[1])
+        " endif
+        let repl = py3eval('ZotCite.GetAnnotations("' . zotkey . '", ' . offset . ')')
+        if repl == []
+            redraw
+            call zotcite#warning('No Zotero annotation found.')
+        else
+            call append('.', repl)
+        endif
+        call zotcite#GetNote_wk(zotkey)
+        call zotcite#GetPDFNote_wk(zotkey)
+    endif
+endfunction
+
+function zotcite#GetNote_wk(key)
+    let zotkey = a:key
+    if zotkey != ''
+        let repl = py3eval('ZotCite.GetNotes("' . zotkey . '")')
+        if repl == ''
+            redraw
+            echo 'No Zotero note found.'
+        else
+            call append('.', split(repl, "\n"))
+        endif
+    endif
+endfunction
+
+function zotcite#GetPDFNote_wk(key)
+    let zotkey = a:key
+    if zotkey == ''
+        return
+    endif
+    redraw
+    let fpath = substitute(zotcite#GetPDFPath(zotkey), "'", "'\\\\''", "g")
+    if fpath == ''
+        return
+    endif
+    let repl = py3eval('ZotCite.GetRefData("' . zotkey . '")')
+    let citekey = " '@" . zotkey . '#' . repl['citekey'] . "' "
+    let pg = 1
+    if has_key(repl, 'pages') && repl['pages'] =~ '[0-9]-'
+        let pg = repl['pages']
+    endif
+    let notes = system("pdfnotes.py '" . fpath . "'" . citekey . pg)
+    if v:shell_error == 0
+        call append(line('.'), split(notes, '\n'))
+    else
+        redraw
+        if v:shell_error == 33
+            call zotcite#warning('Failed to load "' . fpath . '" as a valid PDF document.')
+        elseif v:shell_error == 34
+            call zotcite#warning("No Notes found on PDF.")
+        else
+            call zotcite#warning(notes)
+        endif
+    endif
+endfunction
+
 function zotcite#GlobalInit()
     if !has('python3')
         let g:zotcite_failed = 'zotcite requires python3'
@@ -622,6 +688,7 @@ function zotcite#GlobalInit()
     command -nargs=1 Znote call zotcite#GetNote(<q-args>)
     command -nargs=+ Zannotations call zotcite#GetAnnotations(<q-args>)
     command -nargs=1 Zpdfnote call zotcite#GetPDFNote(<q-args>)
+    command Zall call zotcite#GetAllAnnotations()
 
     " 2019-03-17:
     command ZRefs call zotcite#warning('The command :ZRefs was renamed as :Zrefs') | delcommand ZRefs
